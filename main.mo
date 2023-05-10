@@ -1,63 +1,96 @@
-import Int "mo:base/Int";
-import Float "mo:base/Float"
-actor Calculator {
-    // Step 1 -  Define a mutable variable called `counter`.
-    var counter : Float = 0;
-    // Step 2 - Implement add
-    public func add(x : Float) : async Float {
-        counter := counter + x;
-        return counter
+import Text "mo:base/Text";
+import Time "mo:base/Time";
+import Bool "mo:base/Bool";
+import Buffer "mo:base/Buffer";
+import Result "mo:base/Result";
+import Debug "mo:base/Debug";
+
+actor HomeworkDiary {
+
+    public type Time = Time.Time;
+
+    type Result<Ok, Err> = { #ok : Ok; #err : Err };
+
+    public type Homework = {
+        title : Text;
+        description : Text;
+        dueDate : Time;
+        completed : Bool;
     };
-    
-    // Step 3 - Implement sub 
-    public func sub(x : Float) : async Float {
-        counter := counter - x;
-        return counter
+
+    var homeworkDiary = Buffer.Buffer<Homework>(1);
+
+    public shared func addHomework(homework : Homework) : async Nat {
+        homeworkDiary.add(homework);
+        return homeworkDiary.size() - 1;
     };
-    
-    // Step 4 - Implement mul 
-    public func mul(x : Float) : async Float {
-        counter := counter * x;
-        return counter
-    };
-    
-    // Step 5 - Implement div 
-    public func div(x : Float) : async ?Float {
-        if(x == 0){
-            return null;
+
+    public shared query func getHomework(id : Nat) : async Result.Result<Homework, Text> {
+        if(id < homeworkDiary.size()){
+            var homework : Homework = homeworkDiary.get(id);
+            #ok homework;
+        } else {
+            #err("not implemented")
         };
-        counter := counter / x;
-        return ?counter;
     };
-    
-    // Step 6 - Implement reset 
-    public func reset(): async Float {
-        counter := 0;
-        return counter;
+
+    public shared func updateHomework(id : Nat, homework : Homework) : async Result.Result<(), Text> {
+        if(id < homeworkDiary.size()){
+            homeworkDiary.put(id, homework);
+            return #ok;
+        } else {
+            return #err("not implemented")
+        };
     };
-    
-    // Step 7 - Implement query 
-    public query func see() : async Float {
-        return counter;
+
+    public shared func markAsCompleted(id : Nat) : async Result.Result<(), Text>{
+        if(id < homeworkDiary.size()){
+            var get = homeworkDiary.get(id);
+            get := {
+                title : Text= get.title;
+                description : Text = get.description;
+                dueDate : Time = get.dueDate;
+                completed : Bool = true;
+            };
+            homeworkDiary.put(id, get);
+            return #ok;
+        } else {
+            return #err("not implemented")
+        };
     };
-    
-    // Step 8 - Implement power 
-    public func power(x : Float) : async Float {
-        counter := Float.pow(counter, x);
-        return counter;
+
+
+    public shared func deleteHomework(id : Nat) : async Result.Result<(), Text> {
+        if(id < homeworkDiary.size()){
+            let x = homeworkDiary.remove(id);
+            return #ok;
+        } else {
+            return #err("not implemented")
+        };
     };
-    
-    // Step 9 - Implement sqrt 
-    public func sqrt() : async Float {
-       counter := Float.sqrt(counter);
-       return counter;
+
+    public shared query func getAllHomework() : async [Homework] {
+        return Buffer.toArray(homeworkDiary);
     };
-    
-    // Step 10 - Implement floor 
-    public func floor() : async Int {
-    //    counter := Float.floor(counter);
-       let intValue : Int = Float.toInt(Float.floor(counter));
-       return intValue;
-    }
-    
+
+    public shared query func getPendingHomework() : async [Homework] {
+        var pending = Buffer.Buffer<Homework>(1);
+        for(homework in homeworkDiary.vals()){
+            if(not homework.completed){
+                pending.add(homework)
+            };
+        };
+        return Buffer.toArray(pending);
+    };
+
+    public shared query func searchHomework(searchTerm: Text) : async [Homework] {
+        var taskFound = Buffer.Buffer<Homework>(1);
+        for(homework in homeworkDiary.vals()){
+            if(searchTerm == homework.title or searchTerm == homework.description){
+                taskFound.add(homework)
+            };
+        };
+        return Buffer.toArray(taskFound);
+    };
 };
+
