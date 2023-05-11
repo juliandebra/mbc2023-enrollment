@@ -1,96 +1,155 @@
+import Nat "mo:base/Nat";
+import HashMap "mo:base/HashMap";
+import Blob "mo:base/Blob";
 import Text "mo:base/Text";
-import Time "mo:base/Time";
-import Bool "mo:base/Bool";
-import Buffer "mo:base/Buffer";
 import Result "mo:base/Result";
-import Debug "mo:base/Debug";
+import Principal "mo:base/Principal";
+import Int "mo:base/Int";
+import Hash "mo:base/Hash";
+import Iter "mo:base/Iter";
+import Array "mo:base/Array";
+import Order "mo:base/Order";
 
-actor HomeworkDiary {
+actor StudentWall {
 
-    public type Time = Time.Time;
-
-    type Result<Ok, Err> = { #ok : Ok; #err : Err };
-
-    public type Homework = {
-        title : Text;
-        description : Text;
-        dueDate : Time;
-        completed : Bool;
+    public type Content = {
+        #Text: Text;
+        #Image: Blob;
+        #Video: Blob;
     };
 
-    var homeworkDiary = Buffer.Buffer<Homework>(1);
-
-    public shared func addHomework(homework : Homework) : async Nat {
-        homeworkDiary.add(homework);
-        return homeworkDiary.size() - 1;
+    public type Message = {
+        vote: Int;
+        content: Content;
+        creator: Principal;
     };
 
-    public shared query func getHomework(id : Nat) : async Result.Result<Homework, Text> {
-        if(id < homeworkDiary.size()){
-            var homework : Homework = homeworkDiary.get(id);
-            #ok homework;
-        } else {
-            #err("not implemented")
+    var messageId : Nat = 0;
+
+    let wall = HashMap.HashMap<Nat, Message>(1, Nat.equal, func (x) {Text.hash(Nat.toText(x))});
+ 
+    public shared ({ caller }) func writeMessage(c : Content) : async Nat {
+        let id : Nat = messageId;
+        messageId+=1;
+        let message = {
+            vote = 0;
+            content = c;
+            creator = caller;
         };
+        wall.put(messageId, message);
+        messageId;
     };
 
-    public shared func updateHomework(id : Nat, homework : Homework) : async Result.Result<(), Text> {
-        if(id < homeworkDiary.size()){
-            homeworkDiary.put(id, homework);
-            return #ok;
-        } else {
-            return #err("not implemented")
-        };
-    };
-
-    public shared func markAsCompleted(id : Nat) : async Result.Result<(), Text>{
-        if(id < homeworkDiary.size()){
-            var get = homeworkDiary.get(id);
-            get := {
-                title : Text= get.title;
-                description : Text = get.description;
-                dueDate : Time = get.dueDate;
-                completed : Bool = true;
+    public shared query func getMessage(messageId : Nat) : async Result.Result<Message, Text> {
+        switch(wall.get(messageId)) {
+            case(null){
+                #err("not implemented");
             };
-            homeworkDiary.put(id, get);
-            return #ok;
-        } else {
-            return #err("not implemented")
-        };
-    };
-
-
-    public shared func deleteHomework(id : Nat) : async Result.Result<(), Text> {
-        if(id < homeworkDiary.size()){
-            let x = homeworkDiary.remove(id);
-            return #ok;
-        } else {
-            return #err("not implemented")
-        };
-    };
-
-    public shared query func getAllHomework() : async [Homework] {
-        return Buffer.toArray(homeworkDiary);
-    };
-
-    public shared query func getPendingHomework() : async [Homework] {
-        var pending = Buffer.Buffer<Homework>(1);
-        for(homework in homeworkDiary.vals()){
-            if(not homework.completed){
-                pending.add(homework)
+            case(?message){
+                #ok message;
             };
         };
-        return Buffer.toArray(pending);
     };
 
-    public shared query func searchHomework(searchTerm: Text) : async [Homework] {
-        var taskFound = Buffer.Buffer<Homework>(1);
-        for(homework in homeworkDiary.vals()){
-            if(searchTerm == homework.title or searchTerm == homework.description){
-                taskFound.add(homework)
+    // Update the content for a specific message by ID
+    public shared ({ caller }) func updateMessage(messageId : Nat, c : Content) : async Result.Result<(), Text> {
+
+        let message : ?Message = wall.get(messageId);
+        
+        switch(message){
+            case(null){
+                #err("not implemented");
+            };
+            case(?currentMessage){
+                if(Principal.equal(currentMessage.creator, caller)){
+                    let updatedMessage : Message = {
+                    vote = currentMessage.vote;
+                    content = c;
+                    creator = currentMessage.creator;
+                };
+                wall.put(messageId, updatedMessage);
+                #ok; 
+                } else {
+                    #err("not implemented");
+                };
+                
             };
         };
-        return Buffer.toArray(taskFound);
+    };
+
+    // Delete a specific message by ID
+    public shared ({ caller }) func deleteMessage(messageId : Nat) : async Result.Result<(), Text> {
+        let message : ?Message = wall.get(messageId);
+
+        switch(message) {
+            case(null){
+                #err("not implemented");
+            };
+            case(_){
+                ignore wall.remove(messageId);
+                #ok;
+            };
+        };
+    };
+
+    // Voting
+    public func upVote(messageId : Nat) : async Result.Result<(), Text> {
+        let message : ?Message = wall.get(messageId);
+
+        switch(message){
+            case(null){
+                #err("not implemented");
+            };
+            case(?currentMessage){
+                let upVoteMessage = {
+                    vote = currentMessage.vote + 1;
+                    content = currentMessage.content;
+                    creator = currentMessage.creator;
+                };
+                wall.put(messageId, upVoteMessage);
+                #ok;
+            };
+        };
+    };
+
+    public func downVote(messageId : Nat) : async Result.Result<(), Text> {
+        let message : ?Message = wall.get(messageId);
+
+        switch(message){
+            case(null){
+                #err("not implemented");
+            };
+            case(?currentMessage){
+                let downVoteMessage = {
+                    vote = currentMessage.vote - 1;
+                    content = currentMessage.content;
+                    creator = currentMessage.creator;
+                };
+                wall.put(messageId, downVoteMessage);
+
+                #ok;
+            };
+        };
+    };
+
+    // Get all messages
+    public func getAllMessages() : async [Message] {
+        Iter.toArray<Message>(wall.vals());
+    };
+
+    private func compare(obj1: Message, obj2 :Message) : Order.Order{
+        switch(Int.compare(obj1.vote, obj2.vote)) {
+            case (#greater) return #less;
+            case (#less) return #greater;
+            case(_) return #equal;
+        };
+    };
+
+    // Get all messages ordered by votes
+    public func getAllMessagesRanked() : async [Message] {
+        let arr = Iter.toArray<Message>(wall.vals());
+        Array.sort(arr, compare);
     };
 };
+
 
