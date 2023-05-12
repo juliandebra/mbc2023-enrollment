@@ -3,6 +3,10 @@
         "first_canister":{
             "main": "main.mo",
             "type": "motoko"
+        },
+        "BootcampLocalActor": {
+          "main": "BootcampLocalActor.mo",
+          "type": "motoko"
         }
     }
 }

@@ -1,155 +1,137 @@
-import Nat "mo:base/Nat";
-import HashMap "mo:base/HashMap";
-import Blob "mo:base/Blob";
-import Text "mo:base/Text";
+import TrieMap "mo:base/TrieMap";
+import Trie "mo:base/Trie";
 import Result "mo:base/Result";
-import Principal "mo:base/Principal";
-import Int "mo:base/Int";
+import Text "mo:base/Text";
+import Option "mo:base/Option";
+import Debug "mo:base/Debug";
 import Hash "mo:base/Hash";
+import Nat "mo:base/Nat";
 import Iter "mo:base/Iter";
-import Array "mo:base/Array";
-import Order "mo:base/Order";
+import Account "Account";
+import BootcampLocalActor "BootcampLocalActor";
+// NOTE: only use for local dev,
+// when deploying to IC, import from "rww3b-zqaaa-aaaam-abioa-cai"
+// import BootcampLocalActor "BootcampLocalActor";
 
-actor StudentWall {
 
-    public type Content = {
-        #Text: Text;
-        #Image: Blob;
-        #Video: Blob;
+actor class MotoCoin() {
+
+  public type Account = Account.Account;
+  let ledger : TrieMap.TrieMap<Account, Nat> = TrieMap.TrieMap<Account, Nat>(Account.accountsEqual , Account.accountsHash);
+
+  let BootcampLocalActor : actor {
+    getAllStudentsPrincipal : shared () -> async [Principal];
+  // } = actor("bkyz2-fmaaa-aaaaa-qaaaq-cai");
+} = actor("rww3b-zqaaa-aaaam-abioa-cai");
+
+  // Returns the name of the token
+  public query func name() : async Text {
+    "MotoCoin"
+  };
+
+  // Returns the symbol of the token
+  public query func symbol() : async Text {
+    "MOC"
+  };
+
+  // Returns the the total number of tokens on all accounts
+  public func totalSupply() : async Nat {
+    let arr = Iter.toArray(ledger.vals());
+    var total : Nat = 0;
+    for(i in arr.vals()){
+        total += i
     };
 
-    public type Message = {
-        vote: Int;
-        content: Content;
-        creator: Principal;
-    };
+    return total;
 
-    var messageId : Nat = 0;
+  };
 
-    let wall = HashMap.HashMap<Nat, Message>(1, Nat.equal, func (x) {Text.hash(Nat.toText(x))});
- 
-    public shared ({ caller }) func writeMessage(c : Content) : async Nat {
-        let id : Nat = messageId;
-        messageId+=1;
-        let message = {
-            vote = 0;
-            content = c;
-            creator = caller;
+  // Returns the default transfer fee
+  public query func balanceOf(account : Account) : async (Nat) {
+    let acc = ledger.get(account);
+
+    switch(acc){
+        case(null){
+            return 0;
         };
-        wall.put(messageId, message);
-        messageId;
-    };
-
-    public shared query func getMessage(messageId : Nat) : async Result.Result<Message, Text> {
-        switch(wall.get(messageId)) {
-            case(null){
-                #err("not implemented");
-            };
-            case(?message){
-                #ok message;
-            };
+        case(?acc){
+            return acc;
         };
     };
+  };
 
-    // Update the content for a specific message by ID
-    public shared ({ caller }) func updateMessage(messageId : Nat, c : Content) : async Result.Result<(), Text> {
 
-        let message : ?Message = wall.get(messageId);
-        
-        switch(message){
-            case(null){
-                #err("not implemented");
-            };
-            case(?currentMessage){
-                if(Principal.equal(currentMessage.creator, caller)){
-                    let updatedMessage : Message = {
-                    vote = currentMessage.vote;
-                    content = c;
-                    creator = currentMessage.creator;
+  // Transfer tokens to another account
+  public shared ({ caller }) func transfer(
+    from : Account,
+    to : Account,
+    amount : Nat,
+  ) : async Result.Result<(), Text> {
+    
+    let accFrom = ledger.get(from);
+    let accTo = ledger.get(to);
+    
+    switch(accFrom){
+        case(null){
+            return #err("not implemented")
+        };
+        case(?accFrom){
+          
+            switch(accTo){
+                case(null){
+                    return #err("not implemented")
                 };
-                wall.put(messageId, updatedMessage);
-                #ok; 
-                } else {
-                    #err("not implemented");
+                case(?accTo){
+                    if(accFrom > amount){
+                        ledger.put(from, accFrom - amount);
+                        ledger.put(from, accTo + amount);
+                        return #ok;
+                    } else {
+                        return #err("not implemented")
+                    };
+                    
                 };
-                
             };
+        };  
+    };
+  };
+
+  // Airdrop 100 MotoCoin to any student that is part of the Bootcamp.
+  public func airdrop() : async Result.Result<(), Text> {
+      try {
+        let p  = await BootcampLocalActor.getAllStudentsPrincipal();
+        for(e in p.vals()){
+          let acc : Account = {
+            owner : Principal = e;
+            subaccount : ?Account.Subaccount = null;
+          };
+          ledger.put(acc, 100);
         };
+        return #ok;
+      }
+      catch(err){
+        return #err("not implemented");
+      }
     };
 
-    // Delete a specific message by ID
-    public shared ({ caller }) func deleteMessage(messageId : Nat) : async Result.Result<(), Text> {
-        let message : ?Message = wall.get(messageId);
 
-        switch(message) {
-            case(null){
-                #err("not implemented");
-            };
-            case(_){
-                ignore wall.remove(messageId);
-                #ok;
-            };
-        };
-    };
-
-    // Voting
-    public func upVote(messageId : Nat) : async Result.Result<(), Text> {
-        let message : ?Message = wall.get(messageId);
-
-        switch(message){
-            case(null){
-                #err("not implemented");
-            };
-            case(?currentMessage){
-                let upVoteMessage = {
-                    vote = currentMessage.vote + 1;
-                    content = currentMessage.content;
-                    creator = currentMessage.creator;
-                };
-                wall.put(messageId, upVoteMessage);
-                #ok;
-            };
-        };
-    };
-
-    public func downVote(messageId : Nat) : async Result.Result<(), Text> {
-        let message : ?Message = wall.get(messageId);
-
-        switch(message){
-            case(null){
-                #err("not implemented");
-            };
-            case(?currentMessage){
-                let downVoteMessage = {
-                    vote = currentMessage.vote - 1;
-                    content = currentMessage.content;
-                    creator = currentMessage.creator;
-                };
-                wall.put(messageId, downVoteMessage);
-
-                #ok;
-            };
-        };
-    };
-
-    // Get all messages
-    public func getAllMessages() : async [Message] {
-        Iter.toArray<Message>(wall.vals());
-    };
-
-    private func compare(obj1: Message, obj2 :Message) : Order.Order{
-        switch(Int.compare(obj1.vote, obj2.vote)) {
-            case (#greater) return #less;
-            case (#less) return #greater;
-            case(_) return #equal;
-        };
-    };
-
-    // Get all messages ordered by votes
-    public func getAllMessagesRanked() : async [Message] {
-        let arr = Iter.toArray<Message>(wall.vals());
-        Array.sort(arr, compare);
-    };
+  public func getPrin() : async [Principal] {
+    let p = await BootcampLocalActor.getAllStudentsPrincipal();
+    return p;
+  }   
 };
+   // actor {
 
 
+    //     // Airdrop 1000 MotoCoin to any student that is part of the Bootcamp.
+    //     airdrop : shared () -> async Result.Result<(),Text>;
+    // }
+
+
+
+//     var ledger = TrieMap.TrieMap<Account.Account, Nat>(Account.accountsEqual, Account.accountsHash);
+//     var supply : Nat = 0;
+
+//     public func totalSupply() : async Nat{
+//         return suply;
+//     };
