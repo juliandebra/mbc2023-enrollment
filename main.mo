@@ -1,137 +1,224 @@
-import TrieMap "mo:base/TrieMap";
-import Trie "mo:base/Trie";
-import Result "mo:base/Result";
-import Text "mo:base/Text";
-import Option "mo:base/Option";
-import Debug "mo:base/Debug";
+import HashMap "mo:base/HashMap";
+import Principal "mo:base/Principal";
 import Hash "mo:base/Hash";
+import Error "mo:base/Error";
+import Result "mo:base/Result";
+import Array "mo:base/Array";
+import Text "mo:base/Text";
 import Nat "mo:base/Nat";
+import Int "mo:base/Int";
+import Timer "mo:base/Timer";
+import Debug "mo:base/Debug";
+import Buffer "mo:base/Buffer";
+
+import IC "Ic";
+import HTTP "Http";
+import Type "Types";
 import Iter "mo:base/Iter";
-import Account "Account";
-import BootcampLocalActor "BootcampLocalActor";
-// NOTE: only use for local dev,
-// when deploying to IC, import from "rww3b-zqaaa-aaaam-abioa-cai"
-// import BootcampLocalActor "BootcampLocalActor";
 
+actor class Verifier() {
 
-actor class MotoCoin() {
+  // "Calculator with id : e35fa-wyaaa-aaaaj-qa2dq-cai should pass verification through your verifier"
 
-  public type Account = Account.Account;
-  let ledger : TrieMap.TrieMap<Account, Nat> = TrieMap.TrieMap<Account, Nat>(Account.accountsEqual , Account.accountsHash);
+  type StudentProfile = Type.StudentProfile;
 
-  let BootcampLocalActor : actor {
-    getAllStudentsPrincipal : shared () -> async [Principal];
-  // } = actor("bkyz2-fmaaa-aaaaa-qaaaq-cai");
-} = actor("rww3b-zqaaa-aaaam-abioa-cai");
+  stable var studentEntries:[(Principal, StudentProfile)] = [];
+  let studentProfileStore : HashMap.HashMap<Principal, StudentProfile> = HashMap.HashMap<Principal, StudentProfile>(1, Principal.equal, Principal.hash );
 
-  // Returns the name of the token
-  public query func name() : async Text {
-    "MotoCoin"
+  // STEP 1 - BEGIN
+  public shared ({ caller }) func addMyProfile(profile : StudentProfile) : async Result.Result<(), Text> {
+    try {
+      studentProfileStore.put(caller, profile);
+      #ok;
+    }
+    catch(err){
+      #err("not implemented");
+    }
   };
 
-  // Returns the symbol of the token
-  public query func symbol() : async Text {
-    "MOC"
-  };
+  public shared ({ caller }) func seeAProfile(p : Principal) : async Result.Result<StudentProfile, Text> {
+    let student : ?StudentProfile = studentProfileStore.get(p);
 
-  // Returns the the total number of tokens on all accounts
-  public func totalSupply() : async Nat {
-    let arr = Iter.toArray(ledger.vals());
-    var total : Nat = 0;
-    for(i in arr.vals()){
-        total += i
-    };
-
-    return total;
-
-  };
-
-  // Returns the default transfer fee
-  public query func balanceOf(account : Account) : async (Nat) {
-    let acc = ledger.get(account);
-
-    switch(acc){
-        case(null){
-            return 0;
-        };
-        case(?acc){
-            return acc;
-        };
-    };
-  };
-
-
-  // Transfer tokens to another account
-  public shared ({ caller }) func transfer(
-    from : Account,
-    to : Account,
-    amount : Nat,
-  ) : async Result.Result<(), Text> {
-    
-    let accFrom = ledger.get(from);
-    let accTo = ledger.get(to);
-    
-    switch(accFrom){
-        case(null){
-            return #err("not implemented")
-        };
-        case(?accFrom){
-          
-            switch(accTo){
-                case(null){
-                    return #err("not implemented")
-                };
-                case(?accTo){
-                    if(accFrom > amount){
-                        ledger.put(from, accFrom - amount);
-                        ledger.put(from, accTo + amount);
-                        return #ok;
-                    } else {
-                        return #err("not implemented")
-                    };
-                    
-                };
-            };
-        };  
-    };
-  };
-
-  // Airdrop 100 MotoCoin to any student that is part of the Bootcamp.
-  public func airdrop() : async Result.Result<(), Text> {
-      try {
-        let p  = await BootcampLocalActor.getAllStudentsPrincipal();
-        for(e in p.vals()){
-          let acc : Account = {
-            owner : Principal = e;
-            subaccount : ?Account.Subaccount = null;
-          };
-          ledger.put(acc, 100);
-        };
-        return #ok;
-      }
-      catch(err){
+    switch(student){
+      case(null){
         return #err("not implemented");
+      };
+      case(?stud){
+        #ok stud;
       }
     };
+  };
 
+  public shared ({ caller }) func updateMyProfile(profile : StudentProfile) : async Result.Result<(), Text> {
+    if(Principal.isAnonymous(caller)){
+      #err("not implemented")
+    } else {
+      studentProfileStore.put(caller, profile);
+      #ok;
+    }
+  };
 
-  public func getPrin() : async [Principal] {
-    let p = await BootcampLocalActor.getAllStudentsPrincipal();
-    return p;
-  }   
+  public shared ({ caller }) func deleteMyProfile() : async Result.Result<(), Text> {
+      if(Principal.isAnonymous(caller)){
+      #err("not implemented")
+    } else {
+      ignore studentProfileStore.remove(caller);
+      #ok;
+    }
+  };  
+
+  system func preupgrade(){
+    studentEntries := Iter.toArray(studentProfileStore.entries())
+  };
+
+  system func postupgrade(){
+    for((caller, profile) in studentEntries.vals()){
+      studentProfileStore.put(caller, profile);
+    };
+    studentEntries := [];
+  };
+  // STEP 1 - END
+
+  // STEP 2 - BEGIN
+  type calculatorInterface = Type.CalculatorInterface;
+  public type TestResult = Type.TestResult;
+  public type TestError = Type.TestError;
+
+  public func test(canisterId : Principal) : async TestResult {
+    // let calculator : Type.CalculatorInterface = actor(Principal.toText(canisterId));
+    let calculator = actor(Principal.toText(canisterId)) : actor {
+      reset : shared () -> async Int;
+      add : shared (x : Nat) -> async Int;
+      sub : shared (x : Nat) -> async Int;
+    };
+    // await calculator.reset();
+    try{
+      let resetCheck : Int = await calculator.reset();
+      if(resetCheck != 0){
+        return #err(#UnexpectedValue("Unexpected Value"))
+      };
+      let addCheck : Int = await calculator.add(1);
+      if(addCheck != 1){
+        return #err(#UnexpectedValue("Unexpected Value"))
+      };
+      let subCheck : Int = await calculator.sub(1);
+      if(subCheck != 1){
+        return #err(#UnexpectedValue("Unexpected Value"))
+      };
+      return #ok();
+    }
+    catch(err){
+      return #err(#UnexpectedError("Unexpected Error"));
+    }
+  };
+
+  // STEP - 2 END
+
+  // STEP 3 - BEGIN
+  // NOTE: Not possible to develop locally,
+  // as actor "aaaa-aa" (aka the IC itself, exposed as an interface) does not exist locally
+
+func parseControllersFromCanisterStatusErrorIfCallerNotController(errorMessage : Text) : [Principal] {
+    let lines = Iter.toArray(Text.split(errorMessage, #text("\n")));
+    let words = Iter.toArray(Text.split(lines[1], #text(" ")));
+    var i = 2;
+    let controllers = Buffer.Buffer<Principal>(0);
+    while (i < words.size()) {
+      controllers.add(Principal.fromText(words[i]));
+      i += 1;
+    };
+    Buffer.toArray<Principal>(controllers);
+  };
+
+  public func verifyOwnership(canisterId : Principal, p : Principal) : async Bool {
+    let mgmtCanister : IC.ManagementCanisterInterface = actor("aaaaa-aa");
+    try{
+      let result = await mgmtCanister.canister_status({ canister_id = canisterId});
+      let controller = result.settings.controllers;
+      for(principal in controller.vals()){
+        if(principal == p) return true;
+      };
+      return false;
+    }
+    catch(err){
+      let message = Error.message(err);
+      let controllers = parseControllersFromCanisterStatusErrorIfCallerNotController(message);
+      for(principal in controllers.vals()){
+        if(principal == p){
+          return true;
+        };
+      };
+      return false;
+    }
+  };
+  // STEP 3 - END
+
+  // STEP 4 - BEGIN
+  public shared ({ caller }) func verifyWork(canisterId : Principal, p : Principal) : async Result.Result<(), Text> {
+    let isOwner = await verifyOwnership(canisterId, p);
+    if(not isOwner){
+      return #err("Verifying owner failed")
+    };
+    let result = await test(canisterId);
+    switch(result){
+      case(#err(_)){
+        #err("test failed")
+      };
+      case(#ok){
+        switch(studentProfileStore.get(p)){
+          case(null){
+            return #err("Profile not found");
+          };
+          case(?profile){
+            let graduated = {
+              name = profile.name;
+              team = profile.team;
+              graduate = true
+            };
+            studentProfileStore.put(p, graduated);
+            return #ok();
+          };
+        };
+      };
+    };
+  };
+  // STEP 4 - END
+
+  // STEP 5 - BEGIN
+  // public type HttpRequest = HTTP.HttpRequest;
+  // public type HttpResponse = HTTP.HttpResponse;
+
+  // // NOTE: Not possible to develop locally,
+  // // as Timer is not running on a local replica
+  // public func activateGraduation() : async () {
+  //   return ();
+  // };
+
+  // public func deactivateGraduation() : async () {
+  //   return ();
+  // };
+
+  // public query func http_request(request : HttpRequest) : async HttpResponse {
+  //   return ({
+  //     status_code = 200;
+  //     headers = [];
+  //     body = Text.encodeUtf8("");
+  //     streaming_strategy = null;
+  //   });
+  // };
+  // STEP 5 - END
 };
-   // actor {
-
-
-    //     // Airdrop 1000 MotoCoin to any student that is part of the Bootcamp.
-    //     airdrop : shared () -> async Result.Result<(),Text>;
-    // }
 
 
 
-//     var ledger = TrieMap.TrieMap<Account.Account, Nat>(Account.accountsEqual, Account.accountsHash);
-//     var supply : Nat = 0;
 
-//     public func totalSupply() : async Nat{
-//         return suply;
-//     };
+
+  //  public type TestResult = Result.Result<(), TestError>;
+  //   public type TestError = {
+  //       #UnexpectedValue : Text;
+  //       #UnexpectedError : Text;
+  //   };
+
+
+
+

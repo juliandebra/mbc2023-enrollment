@@ -4,9 +4,9 @@
             "main": "main.mo",
             "type": "motoko"
         },
-        "BootcampLocalActor": {
-          "main": "BootcampLocalActor.mo",
-          "type": "motoko"
+        "Calculator":{
+            "main": "Calculator.mo",
+            "type": "motoko"
         }
     }
 }
